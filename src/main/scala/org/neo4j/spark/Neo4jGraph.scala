@@ -63,32 +63,24 @@ object Neo4jGraph {
   def saveGraph[VD:ClassTag,ED:ClassTag](sc: SparkContext, graph: Graph[VD,ED], nodeProp : String = null, relTypeProp: (String,String) = null, mainLabelIdProp : Option[(String,String)] = None, secondLabelIdProp : Option[(String,String)] = None, merge: Boolean = false) : (Long,Long) = {
     val config = Neo4jConfig(sc.getConf)
     val matchMerge = if (merge) "MERGE" else "MATCH"
-
-    def updateNodes(updateNodesStatement:String, nodes: RDD[(VertexId,VD)], total:Option[Long] = None) : Long = {
-      val batchSize = ((total.getOrElse(nodes.count()) / 100) + 1).toInt
-      nodes.repartition(batchSize).mapPartitions[Long](
-        p => {
-          // TODO was toIterable instead of toList but bug in java-driver
-          val rows = p.map(v => Seq(("id", v._1), ("value", v._2)).toMap.asJava).toList.asJava
-          val res1 = execute(config, updateNodesStatement, Map("data" -> rows)).rows
-          val sum: Long = res1.map( x => x(0).asInstanceOf[Long]).sum
-          Iterator.apply[Long](sum)
+    val nodesUpdated : Long = nodeProp match {
+      case null => 0
+      case _ =>
+        val updateNodes =
+        mainLabelIdProp match {
+          case Some((label, prop)) => s"UNWIND {data} as row $matchMerge (n:`$label`) WHERE n.`$prop` = row.id SET n.`$nodeProp` = row.value return count(*)"
+          case None => s"UNWIND {data} as row MATCH (n) WHERE id(n) = row.id SET n.`$nodeProp` = row.value return count(*)"
         }
-      ).sum().toLong
-    }
-    def nodesUpdateStatement(labelIdProp:(String,String)) =
-      s"UNWIND {data} as row $matchMerge (n:`${labelIdProp._1}` {`${labelIdProp._2}` : row.id}) SET n.`$nodeProp` = row.value return count(*)"
-
-    val nodesUpdated : Long = if (nodeProp == null) 0
-    else {
-        if (secondLabelIdProp.isDefined && mainLabelIdProp.isDefined) {
-            updateNodes(nodesUpdateStatement(mainLabelIdProp.get), graph.triplets.map( t => (t.srcId, t.srcAttr))) +
-            updateNodes(nodesUpdateStatement(secondLabelIdProp.get), graph.triplets.map( t => (t.dstId, t.dstAttr)))
-        } else if (mainLabelIdProp.isDefined) {
-            updateNodes(nodesUpdateStatement(mainLabelIdProp.get),graph.vertices, Some(graph.numVertices))
-        } else {
-          updateNodes(s"UNWIND {data} as row MATCH (n) WHERE id(n) = row.id SET n.`$nodeProp` = row.value return count(*)", graph.vertices, Some(graph.numVertices))
-        }
+        val batchSize = ((graph.vertices.count() / 100) + 1).toInt
+        graph.vertices.repartition(batchSize).mapPartitions[Long](
+          p => {
+            // TODO was toIterable instead of toList but bug in java-driver
+            val rows = p.map(v => Seq(("id", v._1), ("value", v._2)).toMap.asJava).toList.asJava
+            val res1 = execute(config, updateNodes, Map("data" -> rows)).rows
+            val sum: Long = res1.map( x => x(0).asInstanceOf[Long]).sum
+            Iterator.apply[Long](sum)
+          }
+        ).sum().toLong
     }
 
     val relsUpdated : Long = relTypeProp match {
@@ -99,13 +91,13 @@ object Neo4jGraph {
             case Some((label, prop)) =>
               val (label2,prop2) = secondLabelIdProp.getOrElse(mainLabelIdProp.get)
               s"""UNWIND {data} as row
-                 | MATCH (n:`$label` {`$prop`: row.from})
-                 | MATCH (m:`$label2` {`$prop2`: row.to})""".stripMargin
+                 |MATCH (n:`$label`) WHERE n.`$prop` = row.from
+                 |MATCH (m:`$label2`) WHERE m.`$prop2` = row.to""".stripMargin
             case None =>
               s"UNWIND {data} as row MATCH (n), (m) WHERE id(n) = row.from AND id(m) = row.to "
           }) +
             s" $matchMerge (n)-[rel:`$relType`]->(m) SET rel.`$relProp` = row.value return count(*)"
-        val batchSize = ((graph.numEdges / 100) + 1).toInt
+        val batchSize = ((graph.edges.count() / 100) + 1).toInt
 
         graph.edges.repartition(batchSize).mapPartitions[Long](
           p => {
@@ -116,6 +108,6 @@ object Neo4jGraph {
           }
         ).sum().toLong
     }
-    (nodesUpdated,relsUpdated)
+    (nodesUpdated,relsUpdated) // todo
   }
 }

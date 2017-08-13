@@ -25,10 +25,10 @@
     </licenses>
 
     <properties>
-        <neo4j.version>3.2.3</neo4j.version>
-        <driver.version>1.4.2</driver.version>
-        <spark.version>2.0.2</spark.version>
-        <graphframes.version>0.2.0-spark2.0-s_${scala.version.suffix}</graphframes.version>
+        <neo4j.version>3.0.9</neo4j.version>
+        <driver.version>1.2.0</driver.version>
+        <spark.version>1.6.1</spark.version>
+        <graphframes.version>0.5.0-spark1.6-s_${scala.version.suffix}</graphframes.version>
     </properties>
 
     <build>
@@ -127,45 +127,35 @@
             <id>scala_2.10</id>
             <properties>
 	             <scala.version.suffix>2.10</scala.version.suffix>
+
             </properties>
-        </profile>
-        <profile>
-            <id>scala_2.11</id>
-            <properties>
-	             <scala.version.suffix>2.11</scala.version.suffix>
-            </properties>
-            <activation>
+               <activation>
               <activeByDefault>true</activeByDefault>
             </activation>
         </profile>
     </profiles>
 
     <dependencies>
-      <dependency>
-        <groupId>io.netty</groupId>
-        <artifactId>netty-all</artifactId>
-        <version>4.1.8.Final</version>
-      </dependency>
-      <dependency>
+        <dependency>
             <groupId>org.neo4j.driver</groupId>
             <artifactId>neo4j-java-driver</artifactId>
             <version>${driver.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-core_2.11</artifactId>
+            <artifactId>spark-core_2.10</artifactId>
             <version>${spark.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-graphx_2.11</artifactId>
+            <artifactId>spark-graphx_2.10</artifactId>
             <version>${spark.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-sql_2.11</artifactId>
+            <artifactId>spark-sql_2.10</artifactId>
             <version>${spark.version}</version>
             <scope>provided</scope>
         </dependency>

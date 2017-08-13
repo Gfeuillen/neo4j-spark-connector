@@ -9,8 +9,8 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{DataFrame, Row, SQLContext}
 import org.apache.spark.{Partition, SparkContext, TaskContext}
 import org.graphframes.GraphFrame
-import org.neo4j.driver.v1.{Driver, Session, StatementResult}
-import org.neo4j.spark.Neo4j.{LoadDsl, NameProp, PartitionsDsl, Pattern, QueriesDsl, Query, SaveDsl}
+import org.neo4j.driver.v1.{Driver, StatementResult}
+import org.neo4j.spark.Neo4j.{LoadDsl, PartitionsDsl, NameProp, Pattern, Query, QueriesDsl, SaveDsl}
 
 import scala.collection.JavaConverters._
 import scala.language.implicitConversions
@@ -343,7 +343,6 @@ class Neo4j(val sc : SparkContext) extends QueriesDsl with PartitionsDsl with Lo
 
   override def loadDataFrame : DataFrame  = {
     val rowRdd: RDD[Row] = loadRowRdd
-    if (rowRdd.isEmpty()) throw new RuntimeException("Cannot infer schema-types from empty result, please use loadDataFrame(schema: (String,String)*)")
     sqlContext.createDataFrame(rowRdd, rowRdd.first().schema) // todo does it empty the RDD ??
   }
 
@@ -379,58 +378,44 @@ object Executor {
   }
 
   def execute(config: Neo4jConfig, query: String, parameters: Map[String, Any]): CypherResult = {
-
-    def close(driver: Driver, session: Session) = {
-      try {
-        if (session.isOpen) {
-          session.close()
-        }
-        driver.close()
-      } catch {
-        case _ => // ignore
-      }
-    }
-
     val driver: Driver = config.driver()
     val session = driver.session()
 
-    try {
-      val result: StatementResult = session.run(query, toJava(parameters))
+    val result: StatementResult = session.run(query, toJava(parameters))
+    if (!result.hasNext) {
+      result.consume()
+      session.close()
+      driver.close()
+      return new CypherResult(new StructType(), Iterator.empty)
+    }
+    val peek = result.peek()
+    val keyCount = peek.size()
+    if (keyCount == 0) {
+      val res: CypherResult = new CypherResult(new StructType(), Array.fill[Array[Any]](rows(result))(EMPTY).toIterator)
+      result.consume()
+      session.close()
+      driver.close()
+      return res
+    }
+    val keys = peek.keys().asScala
+    val fields = keys.map( k => (k, peek.get(k).`type`())).map( keyType => CypherTypes.field(keyType))
+    val schema = StructType(fields)
+
+    val it = result.asScala.map((record) => {
+      val row = new Array[Any](keyCount)
+      var i = 0
+      while (i < keyCount) {
+          row.update(i, record.get(i).asObject())
+          i = i + 1
+      }
       if (!result.hasNext) {
         result.consume()
         session.close()
         driver.close()
-        return new CypherResult(new StructType(), Iterator.empty)
       }
-      val peek = result.peek()
-      val keyCount = peek.size()
-      if (keyCount == 0) {
-        val res: CypherResult = new CypherResult(new StructType(), Array.fill[Array[Any]](rows(result))(EMPTY).toIterator)
-        result.consume()
-        close(driver,session)
-        return res
-      }
-      val keys = peek.keys().asScala
-      val fields = keys.map(k => (k, peek.get(k).`type`())).map(keyType => CypherTypes.field(keyType))
-      val schema = StructType(fields)
-
-      val it = result.asScala.map((record) => {
-        val row = new Array[Any](keyCount)
-        var i = 0
-        while (i < keyCount) {
-          row.update(i, record.get(i).asObject())
-          i = i + 1
-        }
-        if (!result.hasNext) {
-          result.consume()
-          close(driver,session)
-        }
-        row
-      })
-      new CypherResult(schema, it)
-    } finally {
-      close(driver,session)
-    }
+      row
+    })
+    new CypherResult(schema, it)
   }
 }
 class Neo4jRDD(@transient sc: SparkContext, val query: String, val parameters: Map[String,Any] = Map.empty, partitions : Partitions = Partitions() )

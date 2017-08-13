@@ -20,7 +20,7 @@ object Neo4jGraphFrame {
       val schema = Seq(("src","integer"),("dst","integer")) ++ (if (edge._2 != null) Some("prop", "string") else None)
       val edges = Neo4jDataFrame(sqlContext, edgeStmt,Seq.empty,schema:_*)
 
-      org.graphframes.GraphFrame(vertices1.union(vertices2).distinct(), edges)
+      org.graphframes.GraphFrame(vertices1.unionAll(vertices2).distinct(), edges)
     }
 
     def fromGraphX(sc:SparkContext, label1:String, rels:Seq[String], label2:String) = {
