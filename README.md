@@ -1,3 +1,7 @@
+# FORKED REPOSITORY - SPARK 1.6
+
+Only forked and modified it to have it working for spark 1.6. Quick and fast.
+
 # Neo4j Connector to Apache Spark based on Neo4j 3.0's Bolt protocol
 
 These are the beginnings of a Connector from Neo4j to Apache Spark 2.0 using the new binary protocol for Neo4j, Bolt.
